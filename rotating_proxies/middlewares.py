@@ -16,6 +16,7 @@ from scrapy import signals
 from scrapy.utils.misc import load_object
 from scrapy.utils.url import add_http_if_no_scheme
 from twisted.internet import task
+import json
 
 from .expire import Proxies, exp_backoff_full_jitter
 
@@ -69,6 +70,7 @@ class RotatingProxyMiddleware(object):
     * ``ROTATING_PROXY_BACKOFF_CAP`` - backoff time cap, in seconds.
       Default is 3600 (i.e. 60 min).
     """
+
     def __init__(self, proxy_list, logstats_interval, stop_if_no_proxies,
                  max_proxies_to_try, backoff_base, backoff_cap, crawler):
 
@@ -87,14 +89,26 @@ class RotatingProxyMiddleware(object):
     @classmethod
     def from_crawler(cls, crawler):
         s = crawler.settings
-        proxy_path = s.get('ROTATING_PROXY_LIST_PATH', None)
-        if proxy_path is not None:
-            with codecs.open(proxy_path, 'r', encoding='utf8') as f:
-                proxy_list = [line.strip() for line in f if line.strip()]
+        proxy = s.get('PROXY_1', None)
+        if proxy:
+            proxy_list = [proxy]
+            for i in range(2, 99):
+                proxy = s.get(f'PROXY_{i}', None)
+                if proxy:
+                    proxy_list.append(proxy)
+                else:
+                    break
         else:
-            proxy_list = s.getlist('ROTATING_PROXY_LIST')
+            proxy_path = s.get('ROTATING_PROXY_LIST_PATH', None)
+            if proxy_path is not None:
+                with codecs.open(proxy_path, 'r', encoding='utf8') as f:
+                    proxy_list = [line.strip() for line in f if line.strip()]
+            else:
+                proxy_list = s.getlist('ROTATING_PROXY_LIST')
         if not proxy_list:
             raise NotConfigured()
+        else:
+            logger.info(json.dumps(proxy_list, indent=4))
         mw = cls(
             proxy_list=proxy_list,
             logstats_interval=s.getfloat('ROTATING_PROXY_LOGSTATS_INTERVAL', 30),
@@ -135,7 +149,9 @@ class RotatingProxyMiddleware(object):
     def process_request(self, request, spider):
         if 'proxy' in request.meta and not request.meta.get('_rotating_proxy'):
             return
-        proxy = self.proxies.get_random()
+        account = request.cb_kwargs.get('account', None)
+        api_key_id = account.get('aid', None) if account else None
+        proxy = self.proxies.get_account_proxy(api_key_id) if api_key_id else self.proxies.get_random()
         if not proxy:
             if self.stop_if_no_proxies:
                 raise CloseSpider("no_proxies")
@@ -143,7 +159,7 @@ class RotatingProxyMiddleware(object):
                 logger.warn("No proxies available; marking all proxies "
                             "as unchecked")
                 self.proxies.reset()
-                proxy = self.proxies.get_random()
+                proxy = self.proxies.get_account_proxy(api_key_id) if api_key_id else self.proxies.get_random()
                 if proxy is None:
                     logger.error("No proxies available even after a reset.")
                     raise CloseSpider("no_proxies_after_reset")
@@ -275,6 +291,7 @@ class BanDetectionMiddleware(object):
                 return None
 
     """
+
     def __init__(self, stats, policy):
         self.stats = stats
         self.policy = policy

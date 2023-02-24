@@ -32,12 +32,14 @@ class Proxies(object):
     'reanimated'). This timeout increases exponentially after each
     unsuccessful attempt to use a proxy.
     """
+
     def __init__(self, proxy_list, backoff=None):
         self.proxies = {url: ProxyState() for url in proxy_list}
         self.proxies_by_hostport = {
             extract_proxy_hostport(proxy): proxy
             for proxy in self.proxies
         }
+        self.proxies_by_account = {}
         self.unchecked = set(self.proxies.keys())
         self.good = set()
         self.dead = set()
@@ -45,6 +47,18 @@ class Proxies(object):
         if backoff is None:
             backoff = exp_backoff_full_jitter
         self.backoff = backoff
+
+    def get_account_proxy(self, api_key_id):
+        available = list(self.unchecked | self.good)
+        if api_key_id in self.proxies_by_account:
+            if self.proxies_by_account[api_key_id] in available:
+                return self.proxies_by_account[api_key_id]
+            else:
+                del self.proxies_by_account[api_key_id]
+        if not available:
+            return None
+        self.proxies_by_account[api_key_id] = random.choice(available)
+        return self.proxies_by_account[api_key_id]
 
     def get_random(self):
         """ Return a random available proxy (either good or unchecked) """
@@ -133,10 +147,10 @@ class Proxies(object):
         n_reanimated = len(self.reanimated)
         return "Proxies(good: {}, dead: {}, unchecked: {}, reanimated: {}, " \
                "mean backoff time: {}s)".format(
-            len(self.good), len(self.dead),
-            len(self.unchecked) - n_reanimated, n_reanimated,
-            int(self.mean_backoff_time),
-        )
+                   len(self.good), len(self.dead),
+                   len(self.unchecked) - n_reanimated, n_reanimated,
+                   int(self.mean_backoff_time),
+               )
 
 
 @attr.s
