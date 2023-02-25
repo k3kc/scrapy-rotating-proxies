@@ -149,9 +149,10 @@ class RotatingProxyMiddleware(object):
     def process_request(self, request, spider):
         if 'proxy' in request.meta and not request.meta.get('_rotating_proxy'):
             return
-        account = request.cb_kwargs.get('account', None)
-        api_key_id = account.get('aid', None) if account else None
-        proxy = self.proxies.get_account_proxy(api_key_id) if api_key_id else self.proxies.get_random()
+        # account = request.cb_kwargs.get('account', None)
+        # api_key_id = account.get('aid', None) if account else None
+        # proxy = self.proxies.get_account_proxy(api_key_id) if api_key_id else self.proxies.get_random()
+        proxy = self.proxies.get_random()
         if not proxy:
             if self.stop_if_no_proxies:
                 raise CloseSpider("no_proxies")
@@ -159,7 +160,8 @@ class RotatingProxyMiddleware(object):
                 logger.warn("No proxies available; marking all proxies "
                             "as unchecked")
                 self.proxies.reset()
-                proxy = self.proxies.get_account_proxy(api_key_id) if api_key_id else self.proxies.get_random()
+                # proxy = self.proxies.get_account_proxy(api_key_id) if api_key_id else self.proxies.get_random()
+                proxy = self.proxies.get_random()
                 if proxy is None:
                     logger.error("No proxies available even after a reset.")
                     raise CloseSpider("no_proxies_after_reset")
